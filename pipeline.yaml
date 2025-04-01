@@ -1,0 +1,36 @@
+trigger:
+  branches:
+    include:
+      - dev
+
+pool:
+  name: linuxagents
+
+variables:
+  dockerRegistryServiceConnection: 'NexusConnection'
+  imageRepository: 'welcomeApp'
+  dockerfilePath: 'Dockerfile'
+  tag: '$(Build.BuildId)'
+
+steps:
+# Build the Docker image
+- task: Docker@1
+  inputs:
+    command: 'build'
+    containerregistrytype: 'Container Registry'
+    dockerRegistryEndpoint: '$(dockerRegistryServiceConnection)'
+    repository: '$(imageRepository)'  
+    dockerfile: '$(dockerfilePath)'
+    tags: '$(tag)'
+    arguments: '--build-arg http_proxy=http://192.168.200.200:3128/ --build-arg https_proxy=http://192.168.200.200:3128/ --no-cache'
+  displayName: 'Build Docker Image'
+
+# Push Docker image
+- task: Docker@1
+  inputs:
+    command: 'push'
+    containerregistrytype: 'Container Registry'
+    dockerRegistryEndpoint: '$(dockerRegistryServiceConnection)'
+    repository: '$(imageRepository)'
+    tags: '$(tag)'
+  displayName: 'Push Docker Image'
