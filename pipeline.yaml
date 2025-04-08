@@ -4,15 +4,44 @@ trigger:
       - dev
 
 pool:
-  name: linuxagents
+  name: linuxpostdev
 
 variables:
+  host: 'nexus.orange.cm:4443'
   dockerRegistryServiceConnection: 'NexusConnection'
-  imageRepository: 'welcomeApp'
+  sonarQubeServiceConnection: 'SonarQubeConnection' 
+  imageRepository: 'welcomeapp'
   dockerfilePath: 'Dockerfile'
   tag: '$(Build.BuildId)'
+  projectKey: 'welcomeApp'
+  projectName: 'welcomeApp'
+  password: 'software@2023'
+  sources: '.'
 
 steps:
+# Prepare the SonarQube Scan
+- task: SonarQubePrepare@4
+  inputs:
+    SonarQube: '$(sonarQubeServiceConnection)'
+    scannerMode: 'CLI'
+    configMode: 'manual'
+    cliProjectKey: '$(projectKey)'
+    cliProjectName: '$(projectName)'
+    cliSources: '$(sources)'
+  displayName: 'Prepare SonarQube Scan'
+
+# Run the SonarQube Analysis
+- task: SonarQubeAnalyze@4
+  inputs:
+    jdkversion: 'JAVA_HOME_17_X64'
+  displayName: 'Run SonarQube Scanner'
+
+# Publish the scan results
+- task: SonarQubePublish@4
+  inputs:
+    pollingTimeoutSec: '300'
+  displayName: 'Publish SonarQube Results'
+
 # Build the Docker image
 - task: Docker@1
   inputs:
@@ -34,3 +63,32 @@ steps:
     repository: '$(imageRepository)'
     tags: '$(tag)'
   displayName: 'Push Docker Image'
+
+# Scan Docker Image
+- script: |
+    trivy image --severity HIGH,CRITICAL --scanners vuln  $(host)/$(imageRepository):$(tag)
+  displayName: 'Security Scan with Trivy'
+  continueOnError: true
+
+# Remove Image from Registry if scan fail
+- script: |
+    echo "Scan failed. Removing image from registry."
+    curl -X DELETE -u "software:Orange@2019" https://$(host)/$(imageRepository):$(tag)
+  condition: failed() 
+  displayName: 'Remove Image from Registry'    
+
+# Copy files to staging directory
+- task: CopyFiles@2
+  inputs:
+    Contents: '**'
+    SourceFolder: 'Helm/WelcomeApp'
+    TargetFolder: '$(Build.ArtifactStagingDirectory)'
+  displayName: 'Copy files to staging directory'
+
+# Publish the Artifact
+- task: PublishBuildArtifacts@1
+  inputs:
+    pathToPublish: '$(Build.ArtifactStagingDirectory)'
+    artifactName: 'WelcomeAppChart'
+    publishLocation: 'Azure Pipelines/TFS'
+  displayName: 'Publish Artifact'
